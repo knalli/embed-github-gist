@@ -31,6 +31,10 @@ if ( !defined('EMBED_GISTHUB_BYPASS_CACHE') ) {
 	define('EMBED_GISTHUB_BYPASS_CACHE', false);
 }
 
+if ( !defined('EMBED_GISTHUB_DEFERRED') ) {
+    define('EMBED_GISTHUB_DEFERRED', false);
+}
+
 /**
  * Build a cache key
  * @param int $id GitHub Gist ID
@@ -55,6 +59,13 @@ function embed_github_gist_bypass_cache() {
  */
 function embed_github_gist_prefer_inline_html() {
     return EMBED_GISTHUB_INLINE_HTML;
+}
+
+/**
+ * Prefer deferred loading and not blocking rendering with document.write?
+ */
+function embed_github_gist_prefer_deferred_loading() {
+    return EMBED_GISTHUB_DEFERRED;
 }
 
 /**
@@ -118,12 +129,29 @@ function embed_github_gist($id, $ttl = null, $bump = null, $file = null) {
                 }
             } else {
                 $urlExtra = $file ? '?file='.$file : '';
-                if (defined(EMBED_GISTHUB_USERNAME)) {
-                	$gist .= '<script src="https://gist.github.com/'.EMBED_GISTHUB_USERNAME.'/'.$id.'.js'.$urlExtra.'"></script>';
+                if ( embed_github_gist_prefer_deferred_loading() ) {
+                    $randomId = substr(str_shuffle("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"), 0, 20);
+                    // Load the Gist via JSONP which returns the Gist itself as html and a corresponding CSS resource.
+                    $gist .= '<script defer>';
+                    $gist .= '  jQuery.ajax({';
+                    $gist .= '    url: "https://gist.github.com/'.$id.'.json'.$urlExtra.'", ';
+                    $gist .= '    dataType: "jsonp"';
+                    $gist .= '  }).done(function(json){';
+                    $gist .= '    if (json && json.div) {';
+                    $gist .= '      jQuery(json.div).insertAfter(jQuery("#'.$randomId.'"));';
+                    $gist .= '      jQuery("head").append("<link rel=\"stylesheet\" type=\"text/css\" href=\"https://gist.github.com"+json.stylesheet+"\">");';
+                    $gist .= '    }';
+                    $gist .= '  });';
+                    $gist .= '</script>';
+                    $gist .= '<noscript id="'.$randomId.'">';
                 } else {
-                	$gist .= '<script src="https://gist.github.com/'.$id.'.js'.$urlExtra.'"></script>';
+                    if (defined(EMBED_GISTHUB_USERNAME)) {
+                        $gist .= '<script src="https://gist.github.com/'.EMBED_GISTHUB_USERNAME.'/'.$id.'.js'.$urlExtra.'"></script>';
+                    } else {
+                        $gist .= '<script src="https://gist.github.com/'.$id.'.js'.$urlExtra.'"></script>';
+                    }
+                    $gist .= '<noscript>';
                 }
-                $gist .= '<noscript>';
                 foreach ($files as $name => $fileInfo) {
                     $language = strtolower($fileInfo['language']);
                     $gist .= '<pre><code class="language-'.$language.' '.$language.'">';
